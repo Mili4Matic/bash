@@ -63,34 +63,26 @@ if [ -z "$ENV_NAME" ]; then
     exit 1
 fi
 
-cd "$REAL_DIR"
-
 # Cargar entorno base
 source ~/anaconda3/etc/profile.d/conda.sh
 
-# Detectar si es nombre o path
+cd "$REAL_DIR"
+
 if [[ "$ENV_NAME" == /* ]]; then
     # Es una ruta absoluta
     ENV_PYTHON="$ENV_NAME/bin/python"
+    stdbuf -oL "$ENV_PYTHON" -u "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
 else
-    # Es un nombre de entorno conda
+    # Es un nombre de entorno
     conda activate "$ENV_NAME"
-    ENV_PYTHON="python"
-fi
-
-# Ejecutar el script con salida en tiempo real
-stdbuf -oL "$ENV_PYTHON" "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
-EXIT_CODE=${PIPESTATUS[0]}
-
-# Si activamos entorno conda, desactivar
-if [[ "$ENV_NAME" != /* ]]; then
+    stdbuf -oL python -u "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
     conda deactivate
 fi
 
-# Borrar token para manager
+EXIT_CODE=${PIPESTATUS[0]}
+
 rm -f "$RUNTIME_DIR/${JOB_ID}.ready"
 
-# Mover el trabajo
 if [ $EXIT_CODE -eq 0 ]; then
     mkdir -p "$QUEUE_DIR/done/$USERNAME"
     mv "$QUEUE_DIR/pending/$USERNAME/$JOB_ID" "$QUEUE_DIR/done/$USERNAME/"
