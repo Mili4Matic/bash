@@ -20,8 +20,6 @@ JOB_ID="${USERNAME}_${TIMESTAMP}_${RAND}"
 
 DEST_DIR="$PENDING_DIR/$JOB_ID"
 mkdir -p "$DEST_DIR"
-
-# Crear symlink al script
 ln -s "$ORIGINAL_JOB_FILE" "$DEST_DIR/$(basename "$ORIGINAL_JOB_FILE")"
 
 # Registrar en la cola
@@ -29,14 +27,11 @@ echo "$JOB_ID" >> "$RUNTIME_DIR/queue_state.txt"
 
 echo "Trabajo añadido con ID: $JOB_ID"
 
-# Ahora esperar y ejecutar
-
+# ---- Esperar turno ----
 echo "Esperando turno para el trabajo $JOB_ID..."
 
-# Esperar a que el manager cree el token de ready
 while true; do
-    # Calcular posición
-    POSITION=$(grep -n "$JOB_ID" "$RUNTIME_DIR/queue_state.txt" | cut -d: -f1)
+    POSITION=$(grep -n "^$JOB_ID$" "$RUNTIME_DIR/queue_state.txt" | cut -d: -f1)
 
     if [ -z "$POSITION" ]; then
         echo "El trabajo $JOB_ID ha desaparecido de la cola."
@@ -53,12 +48,11 @@ while true; do
     sleep 5
 done
 
-# Resolver symlink
+# ---- Ejecutar trabajo ----
 JOB_SYMLINK=$(find "$QUEUE_DIR/pending/$USERNAME/$JOB_ID/" -type l -name "*.py" | head -n 1)
 REAL_JOB_FILE=$(readlink -f "$JOB_SYMLINK")
 REAL_DIR=$(dirname "$REAL_JOB_FILE")
 
-# Leer entorno
 ENV_NAME=$(head -n 1 "$REAL_JOB_FILE" | sed -n 's/^# *conda_env: *//p')
 
 if [ -z "$ENV_NAME" ]; then
@@ -66,21 +60,17 @@ if [ -z "$ENV_NAME" ]; then
     exit 1
 fi
 
-# Activar entorno
 source ~/anaconda3/etc/profile.d/conda.sh
 conda activate "$ENV_NAME"
 
-# Ejecutar y loggear
 cd "$REAL_DIR"
 python "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
 EXIT_CODE=${PIPESTATUS[0]}
 
 conda deactivate
 
-# Borrar token de ready para que manager pase al siguiente
 rm -f "$RUNTIME_DIR/${JOB_ID}.ready"
 
-# Mover trabajo a done o failed
 if [ $EXIT_CODE -eq 0 ]; then
     mkdir -p "$QUEUE_DIR/done/$USERNAME"
     mv "$QUEUE_DIR/pending/$USERNAME/$JOB_ID" "$QUEUE_DIR/done/$USERNAME/"
