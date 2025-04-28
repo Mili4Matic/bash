@@ -9,6 +9,16 @@ LOCK_FILE="$RUNTIME_DIR/.manager.lock"
 
 mkdir -p "$PENDING_DIR" "$RUNTIME_DIR" "$DONE_DIR" "$FAILED_DIR"
 
+# Función para limpiar el lock al salir
+cleanup() {
+    echo "Saliendo de queue_manager, limpiando lock..."
+    rm -f "$LOCK_FILE"
+    exit 0
+}
+
+# Atrapamos señales de salida
+trap cleanup SIGINT SIGTERM EXIT
+
 # Prevenir múltiples managers
 if [ -f "$LOCK_FILE" ]; then
     echo "queue_manager ya está corriendo."
@@ -47,6 +57,3 @@ while true; do
 
     sleep 2
 done
-
-# Limpieza
-rm -f "$LOCK_FILE"
