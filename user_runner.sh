@@ -13,7 +13,7 @@ RUNTIME_DIR="$QUEUE_DIR/runtime"
 LOGS_DIR="$QUEUE_DIR/logs"
 mkdir -p "$PENDING_DIR" "$RUNTIME_DIR" "$LOGS_DIR"
 
-# Añadir el trabajo a la cola
+# Añadir trabajo a la cola
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 RAND=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 5)
 JOB_ID="${USERNAME}_${TIMESTAMP}_${RAND}"
@@ -22,13 +22,15 @@ DEST_DIR="$PENDING_DIR/$JOB_ID"
 mkdir -p "$DEST_DIR"
 ln -s "$ORIGINAL_JOB_FILE" "$DEST_DIR/$(basename "$ORIGINAL_JOB_FILE")"
 
-# Registrar en la cola
 echo "$JOB_ID" >> "$RUNTIME_DIR/queue_state.txt"
 
 echo "Trabajo añadido con ID: $JOB_ID"
 
 # ---- Esperar turno ----
 echo "Esperando turno para el trabajo $JOB_ID..."
+
+spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+spin_index=0
 
 while true; do
     POSITION=$(grep -n "^$JOB_ID$" "$RUNTIME_DIR/queue_state.txt" | cut -d: -f1)
@@ -39,13 +41,14 @@ while true; do
     fi
 
     if [ -f "$RUNTIME_DIR/${JOB_ID}.ready" ]; then
-        echo "¡Es tu turno! Ejecutando..."
+        echo -e "\n¡Es tu turno! Ejecutando..."
         break
     else
-        echo "Tu posición en la cola es: $POSITION"
+        printf "\r${spin[$spin_index]} Tu posición en la cola es: $POSITION"
+        spin_index=$(( (spin_index + 1) % 10 ))
     fi
 
-    sleep 5
+    sleep 0.5
 done
 
 # ---- Ejecutar trabajo ----
@@ -60,17 +63,34 @@ if [ -z "$ENV_NAME" ]; then
     exit 1
 fi
 
-source ~/anaconda3/etc/profile.d/conda.sh
-conda activate "$ENV_NAME"
-
 cd "$REAL_DIR"
-python "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
+
+# Cargar entorno base
+source ~/anaconda3/etc/profile.d/conda.sh
+
+# Detectar si es nombre o path
+if [[ "$ENV_NAME" == /* ]]; then
+    # Es una ruta absoluta
+    ENV_PYTHON="$ENV_NAME/bin/python"
+else
+    # Es un nombre de entorno conda
+    conda activate "$ENV_NAME"
+    ENV_PYTHON="python"
+fi
+
+# Ejecutar el script con salida en tiempo real
+stdbuf -oL "$ENV_PYTHON" "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
 EXIT_CODE=${PIPESTATUS[0]}
 
-conda deactivate
+# Si activamos entorno conda, desactivar
+if [[ "$ENV_NAME" != /* ]]; then
+    conda deactivate
+fi
 
+# Borrar token para manager
 rm -f "$RUNTIME_DIR/${JOB_ID}.ready"
 
+# Mover el trabajo
 if [ $EXIT_CODE -eq 0 ]; then
     mkdir -p "$QUEUE_DIR/done/$USERNAME"
     mv "$QUEUE_DIR/pending/$USERNAME/$JOB_ID" "$QUEUE_DIR/done/$USERNAME/"
