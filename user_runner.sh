@@ -63,24 +63,14 @@ if [ -z "$ENV_NAME" ]; then
     exit 1
 fi
 
-# Cargar entorno base
-source ~/anaconda3/etc/profile.d/conda.sh
-
 cd "$REAL_DIR"
 
-if [[ "$ENV_NAME" == /* ]]; then
-    # Es una ruta absoluta
-    ENV_PYTHON="$ENV_NAME/bin/python"
-    stdbuf -oL "$ENV_PYTHON" -u "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
-else
-    # Es un nombre de entorno
-    conda activate "$ENV_NAME"
-    stdbuf -oL python -u "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
-    conda deactivate
-fi
-
+# Ejecutar usando conda run
+echo "Usando entorno Conda: $ENV_NAME"
+stdbuf -oL conda run -n "$ENV_NAME" python -u "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
 EXIT_CODE=${PIPESTATUS[0]}
 
+# Finalizar
 rm -f "$RUNTIME_DIR/${JOB_ID}.ready"
 
 if [ $EXIT_CODE -eq 0 ]; then
