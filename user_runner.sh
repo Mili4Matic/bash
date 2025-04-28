@@ -8,17 +8,28 @@ fi
 ORIGINAL_JOB_FILE=$(realpath "$1")
 USERNAME=$(whoami)
 QUEUE_DIR="/home/queue_jobs"
+PENDING_DIR="$QUEUE_DIR/pending/$USERNAME"
 RUNTIME_DIR="$QUEUE_DIR/runtime"
 LOGS_DIR="$QUEUE_DIR/logs"
-mkdir -p "$LOGS_DIR"
+mkdir -p "$PENDING_DIR" "$RUNTIME_DIR" "$LOGS_DIR"
 
-# Encontrar el job_id
-JOB_ID=$(basename $(dirname $(find "$QUEUE_DIR/pending/$USERNAME/" -lname "$ORIGINAL_JOB_FILE" -print -quit)))
+# Añadir el trabajo a la cola
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+RAND=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 5)
+JOB_ID="${USERNAME}_${TIMESTAMP}_${RAND}"
 
-if [ -z "$JOB_ID" ]; then
-    echo "No se encontró el trabajo en la cola."
-    exit 1
-fi
+DEST_DIR="$PENDING_DIR/$JOB_ID"
+mkdir -p "$DEST_DIR"
+
+# Crear symlink al script
+ln -s "$ORIGINAL_JOB_FILE" "$DEST_DIR/$(basename "$ORIGINAL_JOB_FILE")"
+
+# Registrar en la cola
+echo "$JOB_ID" >> "$RUNTIME_DIR/queue_state.txt"
+
+echo "Trabajo añadido con ID: $JOB_ID"
+
+# Ahora esperar y ejecutar
 
 echo "Esperando turno para el trabajo $JOB_ID..."
 
@@ -51,7 +62,7 @@ REAL_DIR=$(dirname "$REAL_JOB_FILE")
 ENV_NAME=$(head -n 1 "$REAL_JOB_FILE" | sed -n 's/^# *conda_env: *//p')
 
 if [ -z "$ENV_NAME" ]; then
-    echo "ERROR: No se especificó entorno en el script."
+    echo "ERROR: No se especificó entorno conda en el script."
     exit 1
 fi
 
