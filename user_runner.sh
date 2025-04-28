@@ -56,7 +56,8 @@ JOB_SYMLINK=$(find "$QUEUE_DIR/pending/$USERNAME/$JOB_ID/" -type l -name "*.py" 
 REAL_JOB_FILE=$(readlink -f "$JOB_SYMLINK")
 REAL_DIR=$(dirname "$REAL_JOB_FILE")
 
-ENV_NAME=$(head -n 1 "$REAL_JOB_FILE" | sed -n 's/^# *conda_env: *//p')
+# Leer el entorno (acepta con o sin dos puntos)
+ENV_NAME=$(grep -i "^# *conda_env" "$REAL_JOB_FILE" | sed -E 's/^# *conda_env:?[ ]*//;s/[[:space:]]*$//')
 
 if [ -z "$ENV_NAME" ]; then
     echo "ERROR: No se especificó entorno conda en el script."
@@ -65,20 +66,19 @@ fi
 
 cd "$REAL_DIR"
 
-# Ejecutar usando conda run
-echo "Usando entorno Conda: $ENV_NAME"
+# Ejecutar usando conda run de forma limpia
+echo "Usando entorno Conda: '$ENV_NAME'"
 stdbuf -oL conda run -n "$ENV_NAME" python -u "$(basename "$REAL_JOB_FILE")" | tee "$LOGS_DIR/${JOB_ID}.log"
 EXIT_CODE=${PIPESTATUS[0]}
 
-# Finalizar
 rm -f "$RUNTIME_DIR/${JOB_ID}.ready"
 
 if [ $EXIT_CODE -eq 0 ]; then
     mkdir -p "$QUEUE_DIR/done/$USERNAME"
     mv "$QUEUE_DIR/pending/$USERNAME/$JOB_ID" "$QUEUE_DIR/done/$USERNAME/"
-    echo "Trabajo ejecutado correctamente."
+    echo -e "\e[32m✅ Trabajo ejecutado correctamente.\e[0m"
 else
     mkdir -p "$QUEUE_DIR/failed/$USERNAME"
     mv "$QUEUE_DIR/pending/$USERNAME/$JOB_ID" "$QUEUE_DIR/failed/$USERNAME/"
-    echo "Trabajo falló durante la ejecución."
+    echo -e "\e[31m❌ Trabajo falló durante la ejecución.\e[0m"
 fi
