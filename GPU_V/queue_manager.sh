@@ -13,6 +13,30 @@ if [ ! -f "$GPU_STATUS" ]; then
   echo '{ "0": null, "1": null }' > "$GPU_STATUS"
 fi
 
+# Cancelar trabajo actual si hay .ready y lock existente (previo cierre inesperado)
+if [ -f "$LOCK_FILE" ]; then
+  echo "Detectado cierre anterior inesperado. Recuperando estado..."
+  CURRENT_JOB=$(head -n 1 "$QUEUE_FILE" | cut -d: -f1)
+  if [ -n "$CURRENT_JOB" ] && [ -f "$RUNTIME_DIR/${CURRENT_JOB}.ready" ]; then
+    echo "Cancelando trabajo previo: $CURRENT_JOB"
+    rm -f "$RUNTIME_DIR/${CURRENT_JOB}.ready"
+    python3 -c "
+import json
+f = '$GPU_STATUS'
+with open(f) as j:
+    status = json.load(j)
+for k, v in status.items():
+    if v == '$CURRENT_JOB':
+        status[k] = None
+with open(f, 'w') as j:
+    json.dump(status, j)
+"
+    mkdir -p "$QUEUE_DIR/failed"
+    mv "$QUEUE_DIR/pending"/*/"$CURRENT_JOB" "$QUEUE_DIR/failed/" 2>/dev/null
+  fi
+  rm -f "$LOCK_FILE"
+fi
+
 # Limpieza al salir
 cleanup() {
   echo "Saliendo de queue_manager, limpiando lock..."
@@ -21,7 +45,7 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM EXIT
 
-# Evitar instancias duplicadas
+# Crear nuevo lock
 if [ -f "$LOCK_FILE" ]; then
   echo "queue_manager ya está corriendo."
   exit 1
@@ -39,6 +63,17 @@ while true; do
   LINE=$(head -n 1 "$QUEUE_FILE")
   JOB_ID=$(echo "$LINE" | cut -d: -f1)
   REQUESTED_GPUS=$(echo "$LINE" | cut -d: -f2)
+
+  # Verificar si el trabajo ya tiene .ready y GPUs asignadas
+  if [ -f "$RUNTIME_DIR/${JOB_ID}.ready" ]; then
+    echo "Trabajo $JOB_ID ya tiene .ready, esperando a que termine..."
+    while [ -f "$RUNTIME_DIR/${JOB_ID}.ready" ]; do
+      sleep 5
+    done
+    tail -n +2 "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
+    echo "Trabajo $JOB_ID finalizado. Avanzando."
+    continue
+  fi
 
   # Leer estado actual de GPUs
   GPU_IDS=$(python3 -c "
@@ -79,5 +114,4 @@ with open(f, 'w') as j:
     # Esperar a que se liberen GPUs suficientes
     sleep 5
   fi
-
 done
