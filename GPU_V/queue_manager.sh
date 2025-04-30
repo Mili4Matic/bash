@@ -1,6 +1,6 @@
 #!/bin/bash
 
-QUEUE_DIR="/home/queue_jobs"
+QUEUE_DIR="/home/linuxbida/Escritorio/VBoxTools/queue_jobs"
 RUNTIME_DIR="$QUEUE_DIR/runtime"
 LOCK_FILE="$RUNTIME_DIR/.manager.lock"
 QUEUE_FILE="$RUNTIME_DIR/queue_state.txt"
@@ -61,10 +61,17 @@ while true; do
   fi
 
   LINE=$(head -n 1 "$QUEUE_FILE")
+
+  # Verificar formato
+  if [[ ! "$LINE" =~ ^[^:]+:[1-2]$ ]]; then
+    echo "Línea inválida en la cola: '$LINE'. Saltando."
+    tail -n +2 "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
+    continue
+  fi
+
   JOB_ID=$(echo "$LINE" | cut -d: -f1)
   REQUESTED_GPUS=$(echo "$LINE" | cut -d: -f2)
 
-  # Verificar si el trabajo ya tiene .ready y GPUs asignadas
   if [ -f "$RUNTIME_DIR/${JOB_ID}.ready" ]; then
     echo "Trabajo $JOB_ID ya tiene .ready, esperando a que termine..."
     while [ -f "$RUNTIME_DIR/${JOB_ID}.ready" ]; do
@@ -103,7 +110,6 @@ with open(f, 'w') as j:
     json.dump(status, j)
 "
 
-    # Esperar a que termine
     while [ -f "$RUNTIME_DIR/${JOB_ID}.ready" ]; do
       sleep 5
     done
@@ -111,7 +117,6 @@ with open(f, 'w') as j:
     tail -n +2 "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
     echo "Trabajo $JOB_ID completado. Avanzando."
   else
-    # Esperar a que se liberen GPUs suficientes
     sleep 5
   fi
 done
